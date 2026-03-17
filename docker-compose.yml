@@ -1,0 +1,40 @@
+services:
+  product-service:
+    build:
+      context: .
+      dockerfile: product-service/Dockerfile
+    container_name: product-service-cicd
+    ports:
+      - "7081:8081"
+    networks:
+      - ecommerce-network
+
+  order-service:
+    build:
+      context: .
+      dockerfile: order-service/Dockerfile
+    container_name: order-service-cicd
+    ports:
+      - "7082:8082"
+    networks:
+      - ecommerce-network
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    container_name: api-gateway-cicd
+    ports:
+      - "7080:8080"
+    depends_on:
+      - product-service
+      - order-service
+    environment:
+      - PRODUCT_SERVICE_URI=http://product-service:8081
+      - ORDER_SERVICE_URI=http://order-service:8082
+    networks:
+      - ecommerce-network
+
+networks:
+  ecommerce-network:
+    driver: bridge
