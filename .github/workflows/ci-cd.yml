@@ -4,15 +4,16 @@ on:
   push:
     branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
 
 env:
   REGISTRY: ghcr.io
+  IMAGE_OWNER: ${{ github.repository_owner }}
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   # ──────────────────────────────────────────────
-  # JOB 1: Build all services and run tests
+  # JOB 1: Build and test — always runs
   # ──────────────────────────────────────────────
   build-and-test:
     name: Build & Test
@@ -33,8 +34,10 @@ jobs:
         run: mvn clean verify
 
   # ──────────────────────────────────────────────
-  # JOB 2: Build Docker images and push to GHCR
-  # Runs only on push (skipped for pull requests)
+  # JOB 2: Build and push Docker images
+  # Runs on push to main or develop only
+  # develop → :develop tag
+  # main    → :latest and :prod tags
   # ──────────────────────────────────────────────
   docker-build-push:
     name: Docker – ${{ matrix.service }}
@@ -71,11 +74,12 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.service }}
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ matrix.service }}
           tags: |
-            type=sha,prefix=
-            type=ref,event=branch
+            type=raw,value=develop,enable=${{ github.ref == 'refs/heads/develop' }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=prod,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,prefix=${{ github.ref == 'refs/heads/main' && 'prod-' || 'dev-' }}
 
       - name: Build and push ${{ matrix.service }}
         uses: docker/build-push-action@v6
@@ -87,3 +91,81 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,scope=${{ matrix.service }},mode=max
+
+  # ──────────────────────────────────────────────
+  # JOB 3: Deploy to Development
+  # Triggered automatically on push to develop
+  # No approval required
+  # ──────────────────────────────────────────────
+  deploy-dev:
+    name: Deploy to Development
+    runs-on: ubuntu-latest
+    needs: docker-build-push
+    if: github.ref == 'refs/heads/develop'
+
+    environment:
+      name: development
+      url: http://localhost:7080
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Deploy to Development
+        run: |
+          echo "============================================"
+          echo "  Deploying to DEVELOPMENT environment"
+          echo "============================================"
+          echo ""
+          echo "  Branch : develop"
+          echo "  Images : ghcr.io/${{ env.IMAGE_OWNER }}/<service>:develop"
+          echo "  Commit : ${{ github.sha }}"
+          echo ""
+          echo "  docker compose -f docker-compose.dev.yml pull"
+          echo "  docker compose -f docker-compose.dev.yml up -d --force-recreate"
+          echo ""
+          echo "  Services available at:"
+          echo "    API Gateway     -> http://localhost:7080"
+          echo "    Product Service -> http://localhost:7081"
+          echo "    Order Service   -> http://localhost:7082"
+          echo ""
+          echo "  Dev deployment complete!"
+
+  # ──────────────────────────────────────────────
+  # JOB 4: Deploy to Production
+  # Triggered on push to main
+  # Requires manual approval via GitHub Environment
+  # ──────────────────────────────────────────────
+  deploy-prod:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: docker-build-push
+    if: github.ref == 'refs/heads/main'
+
+    environment:
+      name: production
+      url: http://localhost:7080
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Deploy to Production
+        run: |
+          echo "============================================"
+          echo "  Deploying to PRODUCTION environment"
+          echo "============================================"
+          echo ""
+          echo "  Branch : main"
+          echo "  Images : ghcr.io/${{ env.IMAGE_OWNER }}/<service>:latest"
+          echo "  Commit : ${{ github.sha }}"
+          echo ""
+          echo "  docker compose -f docker-compose.prod.yml pull"
+          echo "  docker compose -f docker-compose.prod.yml up -d --force-recreate"
+          echo ""
+          echo "  Services available at:"
+          echo "    API Gateway     -> http://localhost:7080"
+          echo "    Product Service -> http://localhost:7081"
+          echo "    Order Service   -> http://localhost:7082"
+          echo ""
+          echo "  Production deployment complete!"

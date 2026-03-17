@@ -1,0 +1,40 @@
+services:
+  product-service:
+    image: ghcr.io/${IMAGE_OWNER}/product-service:develop
+    container_name: product-service-dev
+    ports:
+      - "7081:8081"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - SPRING_JPA_SHOW_SQL=true
+    networks:
+      - ecommerce-dev
+
+  order-service:
+    image: ghcr.io/${IMAGE_OWNER}/order-service:develop
+    container_name: order-service-dev
+    ports:
+      - "7082:8082"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - SPRING_JPA_SHOW_SQL=true
+    networks:
+      - ecommerce-dev
+
+  api-gateway:
+    image: ghcr.io/${IMAGE_OWNER}/api-gateway:develop
+    container_name: api-gateway-dev
+    ports:
+      - "7080:8080"
+    depends_on:
+      - product-service
+      - order-service
+    environment:
+      - PRODUCT_SERVICE_URI=http://product-service:8081
+      - ORDER_SERVICE_URI=http://order-service:8082
+    networks:
+      - ecommerce-dev
+
+networks:
+  ecommerce-dev:
+    driver: bridge
